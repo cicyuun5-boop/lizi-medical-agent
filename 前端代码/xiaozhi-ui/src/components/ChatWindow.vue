@@ -96,7 +96,7 @@ const sendRequest = (message) => {
   isSending.value = true
   const userMsg = {
     isUser: true,
-    content: message,
+    content: convertStreamOutput(message), // 转义后再交给 v-html 渲染
     isTyping: false,
     isThinking: false,
   }
@@ -109,7 +109,7 @@ const sendRequest = (message) => {
   // 添加机器人加载消息
   const botMsg = {
     isUser: false,
-    content: '', // 增量填充
+    content: '',
     isTyping: true, // 显示加载动画
     isThinking: false,
   }
@@ -124,10 +124,9 @@ const sendRequest = (message) => {
       {
         responseType: 'stream', // 必须为合法值 "text"
         onDownloadProgress: (e) => {
-          const fullText = e.event.target.responseText // 累积的完整文本
-          let newText = fullText.substring(lastMsg.content.length)
-          lastMsg.content += newText //增量更新
-          console.log(lastMsg)
+          // XHR 的 responseText 始终是「截至当前的完整响应」，直接整体转义覆盖即可。
+          // 不要改回按长度 substring 拼接：转义会改变字符串长度，长度基准必然错位。
+          lastMsg.content = convertStreamOutput(e.event.target.responseText)
           scrollToBottom() // 实时滚动
         },
       }
@@ -164,14 +163,15 @@ const uuidToNumber = (uuid) => {
   return number % 1000000
 }
 
-// 转换特殊字符
+// 转义 + 换行格式化：必须先转义原始字符，再插入 <br>/&nbsp; 这类标记。
+// 顺序反过来会让刚插入的 < 和 & 被自己的后续 replace 二次转义，换行会显示成 &lt;br&gt;。
 const convertStreamOutput = (output) => {
   return output
-    .replace(/\n/g, '<br>')
-    .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
-    .replace(/&/g, '&amp;') // 新增转义，避免 HTML 注入
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+    .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
 }
 
 const newChat = () => {
