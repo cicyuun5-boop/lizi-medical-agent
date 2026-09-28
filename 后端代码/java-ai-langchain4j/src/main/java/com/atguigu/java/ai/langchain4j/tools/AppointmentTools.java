@@ -2,13 +2,18 @@ package com.atguigu.java.ai.langchain4j.tools;
 
 import com.atguigu.java.ai.langchain4j.entity.Appointment;
 import com.atguigu.java.ai.langchain4j.service.AppointmentService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class AppointmentTools {
+
+    private static final Logger log = LoggerFactory.getLogger(AppointmentTools.class);
 
     @Autowired
     private AppointmentService appointmentService;
@@ -57,19 +62,28 @@ public class AppointmentTools {
             @P(value = "医生名称", required = false) String doctorName
     ) {
 
-        System.out.println("查询是否有号源");
-        System.out.println("科室名称：" + name);
-        System.out.println("日期：" + date);
-        System.out.println("时间：" + time);
-        System.out.println("医生名称：" + doctorName);
+        // 没给医生姓名时项目里没有排班表可查，只能按「该时段仍有号」放行；
+        // 真正的占位约束由 bookAppointment 的重复预约校验兜底。
+        if (doctorName == null || doctorName.isBlank()) {
+            log.info("查询号源（未指定医生）：科室={}，日期={}，时段={}", name, date, time);
+            return true;
+        }
 
-        //TODO 维护医生的排班信息：
-        //如果没有指定医生名字，则根据其他条件查询是否有可以预约的医生（有返回true，否则返回false）；
+        // 指定了医生：该医生在同一科室 + 日期 + 时段已有预约，即视为该医生该时段约满
+        LambdaQueryWrapper<Appointment> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(Appointment::getDepartment, name);
+        queryWrapper.eq(Appointment::getDate, date);
+        queryWrapper.eq(Appointment::getTime, time);
+        queryWrapper.eq(Appointment::getDoctorName, doctorName);
 
-        //如果指定了医生名字，则判断医生是否有排班（没有排版返回false）
-        //如果有排班，则判断医生排班时间段是否已约满（约满返回false，有空闲时间返回true）
+        long booked = appointmentService.count(queryWrapper);
+        log.info("查询号源：科室={}，日期={}，时段={}，医生={}，已约={}", name, date, time, doctorName, booked);
 
-        return true;
+        // ponytail: 项目没有医生排班表，判断不了「该科室该时段到底有几位医生出诊」，
+        // 所以只落地了「同一医生同一时段不被重复占用」这一条真实约束。
+        // 升级路径：加 doctor_schedule(department, doctor_name, date, time, capacity) 表，
+        // 未指定医生时先查出诊医生列表，再逐个判断是否约满。
+        return booked == 0;
     }
 
 }
