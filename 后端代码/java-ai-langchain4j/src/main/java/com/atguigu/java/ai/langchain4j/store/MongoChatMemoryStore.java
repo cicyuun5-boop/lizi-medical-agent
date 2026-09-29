@@ -52,4 +52,21 @@ public class MongoChatMemoryStore implements ChatMemoryStore {
         Query query = new Query(criteria);
         mongoTemplate.remove(query, ChatMessages.class);
     }
+
+    //---------- Phase 4：冷对话摘要的读写（不进 ChatMemoryStore 接口，只给 SummarizingChatMemory 用）----------
+
+    /** 读该会话的历史摘要；没有就返回 null */
+    public String getSummary(Object memoryId) {
+        Query query = new Query(Criteria.where("memoryId").is(memoryId));
+        ChatMessages chatMessages = mongoTemplate.findOne(query, ChatMessages.class);
+        return chatMessages == null ? null : chatMessages.getSummary();
+    }
+
+    /** 写回历史摘要（不存在则新建文档） */
+    public void updateSummary(Object memoryId, String summary) {
+        Query query = new Query(Criteria.where("memoryId").is(memoryId));
+        Update update = new Update();
+        update.set("summary", summary);
+        mongoTemplate.upsert(query, update, ChatMessages.class);
+    }
 }

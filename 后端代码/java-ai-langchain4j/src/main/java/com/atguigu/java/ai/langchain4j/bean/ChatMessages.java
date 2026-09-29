@@ -20,4 +20,7 @@ public class ChatMessages {
     private String memoryId;
 
     private String content; //存储当前聊天记录列表的json字符串
+
+    //Phase 4：被窗口挤出去的历史对话的摘要（冷对话记忆），null 表示还没有
+    private String summary;
 }

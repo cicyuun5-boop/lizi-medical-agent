@@ -1,12 +1,12 @@
 -- 小智医疗问诊智能体 —— 数据库初始化脚本
--- 原仓库只有实体类，没有任何建表 SQL，跑起来必然报 Table 'guiguxiaozhi.appointment' doesn't exist
+-- 原仓库只有实体类，没有任何建表 SQL，跑起来必然报 Table 'lizi.appointment' doesn't exist
 -- 执行：mysql -uroot -p < create_database.sql
 
-CREATE DATABASE IF NOT EXISTS guiguxiaozhi
+CREATE DATABASE IF NOT EXISTS lizi
     DEFAULT CHARACTER SET utf8mb4
     COLLATE utf8mb4_general_ci;
 
-USE guiguxiaozhi;
+USE lizi;
 
 DROP TABLE IF EXISTS appointment;
 

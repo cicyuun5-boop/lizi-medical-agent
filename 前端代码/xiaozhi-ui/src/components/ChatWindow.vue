@@ -59,7 +59,6 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 
 const messaggListRef = ref()
@@ -92,7 +91,7 @@ const sendMessage = () => {
   }
 }
 
-const sendRequest = (message) => {
+const sendRequest = async (message) => {
   isSending.value = true
   const userMsg = {
     isUser: true,
@@ -117,31 +116,54 @@ const sendRequest = (message) => {
   const lastMsg = messages.value[messages.value.length - 1]
   scrollToBottom()
 
-  axios
-    .post(
-      '/api/xiaozhi/chat',
-      { memoryId: uuid.value, message },
-      {
-        responseType: 'stream', // 必须为合法值 "text"
-        onDownloadProgress: (e) => {
-          // XHR 的 responseText 始终是「截至当前的完整响应」，直接整体转义覆盖即可。
-          // 不要改回按长度 substring 拼接：转义会改变字符串长度，长度基准必然错位。
-          lastMsg.content = convertStreamOutput(e.event.target.responseText)
-          scrollToBottom() // 实时滚动
-        },
+  // 累积的答案原文（未转义）。转义会改变字符串长度，绝不能基于增量拼接，只能整体重算。
+  let answer = ''
+  try {
+    const resp = await fetch('/api/lizi/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memoryId: uuid.value, message }),
+    })
+    if (!resp.ok) throw new Error('HTTP ' + resp.status)
+
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    // 处理一个 SSE 事件块：抽出所有 data: 行拼成一段增量文本
+    const handleEvent = (event) => {
+      const data = event
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).replace(/^ /, ''))
+        .join('\n')
+      if (!data) return
+      answer += data
+      lastMsg.content = convertStreamOutput(answer)
+      scrollToBottom() // 实时滚动
+    }
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      buffer = buffer.replace(/\r\n/g, '\n') // 兼容可能的 CRLF 分帧
+      let idx
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const event = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+        handleEvent(event)
       }
-    )
-    .then(() => {
-      // 流结束后隐藏加载动画
-      messages.value.at(-1).isTyping = false
-      isSending.value = false
-    })
-    .catch((error) => {
-      console.error('流式错误:', error)
-      messages.value.at(-1).content = '请求失败，请重试'
-      messages.value.at(-1).isTyping = false
-      isSending.value = false
-    })
+    }
+    if (buffer.trim()) handleEvent(buffer) // 落尾无空行的事件块
+  } catch (error) {
+    console.error('流式错误:', error)
+    lastMsg.content = '请求失败，请重试'
+  } finally {
+    // 流结束后隐藏加载动画
+    lastMsg.isTyping = false
+    isSending.value = false
+  }
 }
 
 // 初始化 UUID
